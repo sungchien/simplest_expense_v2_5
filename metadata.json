@@ -1,0 +1,5 @@
+{
+  "name": "大學生極簡記帳 (Student Expense Tracker_v2.5)",
+  "description": "一個專為大學生設計的極簡個人消費記帳系統，提供收支紀錄、快速新增、消費報告視覺化及簡單的帳號管理功能。",
+  "requestFramePermissions": []
+}
