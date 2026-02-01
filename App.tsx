@@ -22,6 +22,7 @@ import {
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Welcome from './pages/Welcome';
 import Dashboard from './pages/Dashboard';
 import Report from './pages/Report';
 import ExpenseForm from './pages/ExpenseForm';
@@ -73,8 +74,8 @@ const App: React.FC = () => {
           await updateDoc(userDocRef, { lastLogin: Date.now() });
         }
 
-        // 成功後統一導向首頁
-        setView('DASHBOARD');
+        // 登入後先顯示歡迎頁面 (僅從登入/註冊頁面過來時才顯示)
+        setView((prevView) => (prevView === 'LOGIN' || prevView === 'REGISTER') ? 'WELCOME' : prevView === 'WELCOME' ? 'WELCOME' : 'DASHBOARD');
       } else {
         setUser(null);
         setExpenses([]);
@@ -162,7 +163,7 @@ const App: React.FC = () => {
 
   const handleLogin = useCallback((loggedInUser: User) => {
     setUser(loggedInUser);
-    setView('DASHBOARD');
+    setView('WELCOME'); // 手動登入後進入歡迎頁
   }, []);
 
   const handleLogout = useCallback(async () => {
@@ -260,6 +261,7 @@ const App: React.FC = () => {
     switch (view) {
       case 'LOGIN': return <Login onLogin={handleLogin} onNavigate={handleNavigate} />;
       case 'REGISTER': return <Register onRegister={handleLogin} onNavigate={handleNavigate} />;
+      case 'WELCOME': return <Welcome user={user} onConfirm={() => setView('DASHBOARD')} />;
       case 'DASHBOARD': return <Dashboard user={user} expenses={expenses} onDelete={handleDeleteExpense} onEdit={startEdit} onNavigateToAdd={() => setView('ADD_EXPENSE')} />;
       case 'REPORT': return <Report expenses={expenses} budget={budget} onUpdateBudget={handleUpdateBudget} />;
       case 'ADD_EXPENSE': return <ExpenseForm title="新增消費" onSave={handleAddExpense} />;

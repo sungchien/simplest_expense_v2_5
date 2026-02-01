@@ -21,7 +21,7 @@ const Layout: React.FC<LayoutProps> = ({
   title, 
   showBack 
 }) => {
-  const isAuthPage = currentView === 'LOGIN' || currentView === 'REGISTER';
+  const isAuthPage = currentView === 'LOGIN' || currentView === 'REGISTER' || currentView === 'WELCOME';
 
   return (
     <div className="relative flex min-h-screen w-full flex-col overflow-x-hidden max-w-[480px] mx-auto bg-background shadow-2xl">

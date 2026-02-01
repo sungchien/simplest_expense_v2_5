@@ -26,4 +26,4 @@ export interface Expense {
   timestamp: number; // 統一為數字格式
 }
 
-export type AppView = 'LOGIN' | 'REGISTER' | 'DASHBOARD' | 'REPORT' | 'ADD_EXPENSE' | 'EDIT_EXPENSE';
+export type AppView = 'LOGIN' | 'REGISTER' | 'WELCOME' | 'DASHBOARD' | 'REPORT' | 'ADD_EXPENSE' | 'EDIT_EXPENSE';
