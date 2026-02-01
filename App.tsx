@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   AppView, 
   User, 
@@ -36,7 +36,15 @@ const App: React.FC = () => {
   const [dbError, setDbError] = useState<string | null>(null);
   const [indexUrl, setIndexUrl] = useState<string | null>(null);
 
-  // 監聽驗證狀態
+  // 穩定的導航函數
+  const handleNavigate = useCallback((newView: AppView) => {
+    if (newView !== 'EDIT_EXPENSE') {
+      setEditingExpense(null);
+    }
+    setView(newView);
+  }, []);
+
+  // 監聽驗證狀態 (主要的登入狀態控制中心)
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
@@ -48,7 +56,7 @@ const App: React.FC = () => {
         };
         setUser(currentUser);
         
-        // 確保使用者文件存在於 Firestore (特別是 Google 登入時)
+        // 確保使用者文件存在於 Firestore
         const userDocRef = doc(db, 'users', fbUser.uid);
         const userDoc = await getDoc(userDocRef);
         if (!userDoc.exists()) {
@@ -60,8 +68,12 @@ const App: React.FC = () => {
             lastLogin: Date.now(),
             monthlyBudget: 10000
           });
+        } else {
+          // 更新最後登入時間
+          await updateDoc(userDocRef, { lastLogin: Date.now() });
         }
 
+        // 成功後統一導向首頁
         setView('DASHBOARD');
       } else {
         setUser(null);
@@ -74,14 +86,13 @@ const App: React.FC = () => {
     return () => unsubscribeAuth();
   }, []);
 
-  // 監聽即時資料庫更新 (消費紀錄 + 預算設定)
+  // 監聽即時資料庫更新
   useEffect(() => {
     if (!user) return;
 
     setDbError(null);
     setIndexUrl(null);
     
-    // 監聽預算
     const userDocRef = doc(db, 'users', user.uid);
     const unsubscribeUser = onSnapshot(userDocRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -92,7 +103,6 @@ const App: React.FC = () => {
       }
     });
 
-    // 監聽消費紀錄
     const userExpensesRef = collection(db, 'users', user.uid, 'expenses');
     const q = query(userExpensesRef, orderBy('timestamp', 'desc'));
 
@@ -101,39 +111,25 @@ const App: React.FC = () => {
         const data = fbDoc.data();
         let ts = data.timestamp;
 
-        // 日期格式轉換邏輯保持不變
         if (typeof ts === 'number') {
           ts = ts;
         } else if (ts && typeof ts === 'object' && 'seconds' in ts) {
           ts = ts.seconds * 1000;
         } else if (ts && typeof ts.toDate === 'function') {
           ts = ts.toDate().getTime();
-        } else if (typeof ts === 'string') {
-          let normalized = ts
-            .replace(/年|月/g, '-')
-            .replace(/日/g, '')
-            .replace(/晚上|下午/g, ' PM ')
-            .replace(/早上|上午/g, ' AM ')
-            .split('[')[0].trim();
-          
-          const parsed = new Date(normalized).getTime();
-          ts = isNaN(parsed) ? Date.now() : parsed;
         } else {
           ts = Date.now();
         }
 
-        const itemValue = data.item || ExpenseItem.OTHER;
-
         return {
           ...data,
           id: fbDoc.id,
-          item: itemValue,
+          item: data.item || ExpenseItem.OTHER,
           timestamp: ts
         } as Expense;
       });
 
-      const sortedData = [...expenseData].sort((a, b) => b.timestamp - a.timestamp);
-      setExpenses(sortedData);
+      setExpenses(expenseData);
     }, (error) => {
       console.error("Firestore Error:", error);
       if (error.message.includes('https://console.firebase.google.com')) {
@@ -157,53 +153,36 @@ const App: React.FC = () => {
     if (!user) return;
     try {
       const userDocRef = doc(db, 'users', user.uid);
-      await updateDoc(userDocRef, {
-        monthlyBudget: newBudget
-      });
+      await updateDoc(userDocRef, { monthlyBudget: newBudget });
       setBudget(newBudget);
     } catch (err: any) {
       console.error("Update Budget Error:", err);
-      if (err.code === 'not-found') {
-        await setDoc(doc(db, 'users', user.uid), {
-          monthlyBudget: newBudget,
-          email: user.email
-        }, { merge: true });
-      }
     }
   };
 
-  const handleLogin = (loggedInUser: User) => {
+  const handleLogin = useCallback((loggedInUser: User) => {
     setUser(loggedInUser);
     setView('DASHBOARD');
-  };
+  }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
+      setLoading(true);
       await signOut(auth);
-      setUser(null);
-      setExpenses([]);
-      setView('LOGIN');
+      // setView 會由 onAuthStateChanged 自動處理
     } catch (err) {
       console.error("Logout Error:", err);
+      setLoading(false);
     }
-  };
-
-  const handleNavigate = (newView: AppView) => {
-    if (newView !== 'EDIT_EXPENSE') {
-      setEditingExpense(null);
-    }
-    setView(newView);
-  };
+  }, []);
 
   const handleAddExpense = async (amount: number, item: ExpenseItem, description: string) => {
     if (!user) return;
     try {
       const userExpensesRef = collection(db, 'users', user.uid, 'expenses');
       const newExpenseRef = doc(userExpensesRef); 
-      const uniqueId = newExpenseRef.id;
-
       await setDoc(newExpenseRef, {
-        id: uniqueId, 
+        id: newExpenseRef.id, 
         userId: user.uid,
         amount,
         item,
@@ -212,7 +191,6 @@ const App: React.FC = () => {
       });
       setView('DASHBOARD');
     } catch (err: any) {
-      console.error("Add Expense Error:", err);
       alert('儲存失敗：' + err.message);
     }
   };
@@ -230,7 +208,6 @@ const App: React.FC = () => {
       setEditingExpense(null);
       setView('DASHBOARD');
     } catch (err: any) {
-      console.error("Update Expense Error:", err);
       alert('更新失敗：' + err.message);
     }
   };
@@ -242,7 +219,6 @@ const App: React.FC = () => {
         const expenseRef = doc(db, 'users', user.uid, 'expenses', id);
         await deleteDoc(expenseRef);
       } catch (err: any) {
-        console.error("Delete Expense Error:", err);
         alert('刪除失敗：' + err.message);
       }
     }

@@ -25,13 +25,12 @@ const Login: React.FC<LoginProps> = ({ onLogin, onNavigate }) => {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    // 處理重新導向後的登入結果
     const handleRedirectResult = async () => {
       try {
-        // 由於 getRedirectResult 可能需要時間，顯示載入狀態
+        // 檢查是否從 Google 登入重新導向回來
         const result = await getRedirectResult(auth);
         if (result) {
-          setLoading(true);
+          setLoading(true); // 觸發全螢幕 loading 或內部狀態
           const fbUser = result.user;
           onLogin({
             uid: fbUser.uid,
@@ -39,6 +38,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onNavigate }) => {
             displayName: fbUser.displayName || undefined,
             photoURL: fbUser.photoURL || undefined,
           });
+          // 導航會由 App.tsx 的 onAuthStateChanged 或 onLogin 觸發
         }
       } catch (err: any) {
         console.error("Redirect Result Error:", err);
@@ -49,16 +49,14 @@ const Login: React.FC<LoginProps> = ({ onLogin, onNavigate }) => {
           setError('Google 登入失敗：' + (err.message || err.code));
         }
       } finally {
-        setLoading(false);
+        // 不需要手動設為 false，因為導航會卸載此元件
       }
     };
 
     handleRedirectResult();
 
-    // 強化網域偵測邏輯，解決在 Sandbox Iframe 內可能回傳空字串的問題
     const detectHostname = () => {
       try {
-        // 優先嘗試直接讀取，若為空則嘗試從 href 解析
         const host = window.location.hostname || new URL(window.location.href).hostname;
         setCurrentHostname(host || '無法自動偵測，請在新分頁開啟');
       } catch (e) {
@@ -102,7 +100,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onNavigate }) => {
       } else {
         setError('登入錯誤：' + (err.message || err.code));
       }
-    } finally {
       setLoading(false);
     }
   };
@@ -113,7 +110,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onNavigate }) => {
     setSuccess('');
     setIsUnauthorizedDomain(false);
     try {
-      // 改用 signInWithRedirect 避免在某些環境下 Popup 被封鎖的問題
       await signInWithRedirect(auth, googleProvider);
     } catch (err: any) {
       console.error("Google Login Initiated Error:", err);
@@ -133,7 +129,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onNavigate }) => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } else {
-      // 備案：如果還是抓不到，提示使用者手動從網址列複製
       alert('請直接從瀏覽器網址列複製網域（例如 xxxx.googleusercontent.com）');
     }
   };
@@ -159,6 +154,15 @@ const Login: React.FC<LoginProps> = ({ onLogin, onNavigate }) => {
 
   return (
     <div className="flex flex-col h-full animate-in fade-in duration-700">
+      {loading && (
+        <div className="fixed inset-0 bg-white/60 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+            <p className="text-primary font-bold">登入中...</p>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col items-center pt-16 pb-8">
         <div className="inline-flex items-center justify-center w-16 h-16 bg-primary-soft text-primary rounded-2xl mb-6 shadow-lg shadow-primary/10">
           <span className="material-symbols-outlined !text-4xl">account_balance_wallet</span>
@@ -274,11 +278,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onNavigate }) => {
           disabled={loading}
           className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-4 rounded-2xl text-lg mt-4 shadow-xl shadow-primary/20 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70"
         >
-          {loading ? (
-            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-          ) : (
-            <>登入 <span className="material-symbols-outlined text-[22px]">login</span></>
-          )}
+          登入 <span className="material-symbols-outlined text-[22px]">login</span>
         </button>
 
         <div className="relative flex items-center py-4">
