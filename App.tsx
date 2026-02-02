@@ -7,7 +7,7 @@ import {
   ExpenseItem 
 } from './types';
 import { auth, db } from './services/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut, getRedirectResult } from 'firebase/auth';
 import { 
   collection, 
   query, 
@@ -47,7 +47,20 @@ const App: React.FC = () => {
 
   // 監聽驗證狀態 (主要的登入狀態控制中心)
   useEffect(() => {
+    console.log("[App] 初始化 Auth 監聽器...");
+    
+    // 檢查是否有重新導向結果
+    getRedirectResult(auth).then((result) => {
+      if (result) {
+        console.log("[App] 偵測到 Google 重新導向結果:", result.user.email);
+      }
+    }).catch(err => {
+      console.error("[App] 重新導向處理失敗:", err.code, err.message);
+    });
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
+      console.log("[App] Auth 狀態變更:", fbUser ? `已登入 (${fbUser.email})` : "未登入");
+      
       if (fbUser) {
         const currentUser: User = {
           uid: fbUser.uid,
@@ -57,25 +70,34 @@ const App: React.FC = () => {
         };
         setUser(currentUser);
         
-        // 確保使用者文件存在於 Firestore
-        const userDocRef = doc(db, 'users', fbUser.uid);
-        const userDoc = await getDoc(userDocRef);
-        if (!userDoc.exists()) {
-          await setDoc(userDocRef, {
-            email: fbUser.email,
-            displayName: fbUser.displayName,
-            photoURL: fbUser.photoURL,
-            createdAt: Date.now(),
-            lastLogin: Date.now(),
-            monthlyBudget: 10000
-          });
-        } else {
-          // 更新最後登入時間
-          await updateDoc(userDocRef, { lastLogin: Date.now() });
+        try {
+          const userDocRef = doc(db, 'users', fbUser.uid);
+          const userDoc = await getDoc(userDocRef);
+          if (!userDoc.exists()) {
+            console.log("[App] 建立新使用者文件...");
+            await setDoc(userDocRef, {
+              email: fbUser.email,
+              displayName: fbUser.displayName,
+              photoURL: fbUser.photoURL,
+              createdAt: Date.now(),
+              lastLogin: Date.now(),
+              monthlyBudget: 10000
+            });
+          } else {
+            await updateDoc(userDocRef, { lastLogin: Date.now() });
+          }
+        } catch (e) {
+          console.error("[App] Firestore 同步失敗:", e);
         }
 
-        // 登入後先顯示歡迎頁面 (僅從登入/註冊頁面過來時才顯示)
-        setView((prevView) => (prevView === 'LOGIN' || prevView === 'REGISTER') ? 'WELCOME' : prevView === 'WELCOME' ? 'WELCOME' : 'DASHBOARD');
+        // 強制進入歡迎頁面 (如果還在登入相關頁面)
+        setView(current => {
+          if (current === 'LOGIN' || current === 'REGISTER') {
+            console.log("[App] 視圖轉換: LOGIN -> WELCOME");
+            return 'WELCOME';
+          }
+          return current;
+        });
       } else {
         setUser(null);
         setExpenses([]);
@@ -111,7 +133,6 @@ const App: React.FC = () => {
       const expenseData: Expense[] = snapshot.docs.map(fbDoc => {
         const data = fbDoc.data();
         let ts = data.timestamp;
-
         if (typeof ts === 'number') {
           ts = ts;
         } else if (ts && typeof ts === 'object' && 'seconds' in ts) {
@@ -129,10 +150,9 @@ const App: React.FC = () => {
           timestamp: ts
         } as Expense;
       });
-
       setExpenses(expenseData);
     }, (error) => {
-      console.error("Firestore Error:", error);
+      console.error("[App] Firestore 報錯:", error);
       if (error.message.includes('https://console.firebase.google.com')) {
         const urlMatch = error.message.match(/https:\/\/console\.firebase\.google\.com[^\s]*/);
         if (urlMatch) {
@@ -163,14 +183,13 @@ const App: React.FC = () => {
 
   const handleLogin = useCallback((loggedInUser: User) => {
     setUser(loggedInUser);
-    setView('WELCOME'); // 手動登入後進入歡迎頁
+    setView('WELCOME');
   }, []);
 
   const handleLogout = useCallback(async () => {
     try {
       setLoading(true);
       await signOut(auth);
-      // setView 會由 onAuthStateChanged 自動處理
     } catch (err) {
       console.error("Logout Error:", err);
       setLoading(false);
@@ -232,11 +251,14 @@ const App: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-primary font-bold">同步中...</p>
+      <div className="flex h-screen w-full flex-col items-center justify-center bg-background p-10">
+        <div className="relative mb-8">
+           <div className="w-20 h-20 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+           <div className="absolute inset-0 flex items-center justify-center">
+             <span className="material-symbols-outlined text-primary text-3xl animate-pulse">account_balance_wallet</span>
+           </div>
         </div>
+        <p className="text-primary font-black tracking-widest uppercase text-xs animate-pulse text-center">正在同步帳戶狀態，請稍候...</p>
       </div>
     );
   }
@@ -249,11 +271,11 @@ const App: React.FC = () => {
             <span className="material-symbols-outlined text-4xl">database_off</span>
           </div>
           <h2 className="text-text-main font-bold text-xl mb-3">同步結構中</h2>
-          <p className="text-slate-500 text-sm mb-8 leading-relaxed"> Firebase 正在優化資料排序結構，請點擊下方按鈕完成配置。 </p>
+          <p className="text-slate-500 text-sm mb-8 leading-relaxed"> Firebase 正在優化資料排序結構 </p>
           <a href={indexUrl} target="_blank" rel="noopener noreferrer" className="w-full bg-primary text-white font-bold py-4 rounded-2xl mb-4 flex items-center justify-center gap-2">
             <span className="material-symbols-outlined">settings</span> 開啟配置頁面
           </a>
-          <button onClick={() => window.location.reload()} className="text-primary font-bold text-sm">我已完成，重整畫面</button>
+          <button onClick={() => window.location.reload()} className="text-primary font-bold text-sm">重新整理</button>
         </div>
       );
     }
@@ -264,14 +286,30 @@ const App: React.FC = () => {
       case 'WELCOME': return <Welcome user={user} onConfirm={() => setView('DASHBOARD')} />;
       case 'DASHBOARD': return <Dashboard user={user} expenses={expenses} onDelete={handleDeleteExpense} onEdit={startEdit} onNavigateToAdd={() => setView('ADD_EXPENSE')} />;
       case 'REPORT': return <Report expenses={expenses} budget={budget} onUpdateBudget={handleUpdateBudget} />;
-      case 'ADD_EXPENSE': return <ExpenseForm title="新增消費" onSave={handleAddExpense} />;
-      case 'EDIT_EXPENSE': return <ExpenseForm title="修改消費" initialExpense={editingExpense || undefined} onSave={handleUpdateExpense} />;
+      case 'ADD_EXPENSE': return <ExpenseForm title="新增支出" onSave={handleAddExpense} />;
+      case 'EDIT_EXPENSE': return editingExpense ? <ExpenseForm title="編輯支出" initialExpense={editingExpense} onSave={handleUpdateExpense} /> : null;
       default: return null;
     }
   };
 
+  const getTitle = () => {
+    switch (view) {
+      case 'REPORT': return '支出分析';
+      case 'ADD_EXPENSE': return '新增支出';
+      case 'EDIT_EXPENSE': return '編輯支出';
+      default: return undefined;
+    }
+  };
+
   return (
-    <Layout user={user} currentView={view} onNavigate={handleNavigate} onLogout={handleLogout} title={view === 'ADD_EXPENSE' ? '新增消費' : view === 'EDIT_EXPENSE' ? '修改消費' : undefined} showBack={view === 'ADD_EXPENSE' || view === 'EDIT_EXPENSE'}>
+    <Layout 
+      user={user} 
+      currentView={view} 
+      onNavigate={handleNavigate} 
+      onLogout={handleLogout}
+      title={getTitle()}
+      showBack={view === 'ADD_EXPENSE' || view === 'EDIT_EXPENSE'}
+    >
       {renderContent()}
     </Layout>
   );
