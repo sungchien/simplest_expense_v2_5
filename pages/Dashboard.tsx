@@ -35,10 +35,17 @@ export const ItemIcons: Record<ExpenseItem, string> = {
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit, onNavigateToAdd }) => {
-  // 過濾最近一週（7天內）的消費
-  const recentExpenses = useMemo(() => {
+  // 過濾並排序消費紀錄：從最近到最早 (降序排列)
+  const sortedExpenses = useMemo(() => {
+    // 雖然 Firebase 已經排序，但前端再次排序可確保資料一致性
+    // 目前保留 7 天內的過濾，如果不足 5 筆則顯示全部，增加實用性
     const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    return expenses.filter(expense => expense.timestamp >= oneWeekAgo);
+    const filtered = expenses.filter(expense => expense.timestamp >= oneWeekAgo);
+    
+    // 如果最近一週沒資料，就顯示全部紀錄中的前 20 筆
+    const displayList = filtered.length > 0 ? filtered : expenses.slice(0, 20);
+    
+    return [...displayList].sort((a, b) => b.timestamp - a.timestamp);
   }, [expenses]);
 
   const formatDate = (timestamp: number) => {
@@ -76,32 +83,32 @@ const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit,
 
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-extrabold text-text-main tracking-tight italic">最近消費</h1>
-          <p className="text-sm text-slate-400 mt-1">最近一週共有 {recentExpenses.length} 筆支出</p>
+          <h1 className="text-3xl font-extrabold text-text-main tracking-tight italic">消費紀錄</h1>
+          <p className="text-sm text-slate-400 mt-1">目前顯示最近 {sortedExpenses.length} 筆支出</p>
         </div>
         <div className="flex flex-col items-end">
            <span className="text-[10px] font-black px-3 py-1 bg-primary text-white rounded-full uppercase tracking-widest shadow-lg shadow-primary/20">
-            即時連線
+            即時同步
           </span>
         </div>
       </div>
 
       <div className="space-y-4">
-        {recentExpenses.length === 0 ? (
+        {sortedExpenses.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 bg-white rounded-[32px] border border-dashed border-slate-200">
             <div className="size-20 bg-slate-50 rounded-full flex items-center justify-center text-slate-200 mb-4">
               <span className="material-symbols-outlined text-4xl">calendar_today</span>
             </div>
-            <p className="text-slate-400 font-bold px-8 text-center">最近一週尚無消費紀錄</p>
+            <p className="text-slate-400 font-bold px-8 text-center">尚無消費紀錄</p>
             <button 
               onClick={onNavigateToAdd}
               className="mt-4 text-primary font-bold text-sm underline underline-offset-4"
             >
-              立即新增一筆
+              立即新增第一筆
             </button>
           </div>
         ) : (
-          recentExpenses.map((expense) => (
+          sortedExpenses.map((expense) => (
             <div key={expense.id} className="group bg-white rounded-[24px] p-4 flex items-center justify-between shadow-sm border border-transparent transition-all hover:shadow-md hover:border-primary/10">
               <div className="flex items-center gap-4">
                 <div className="flex items-center justify-center rounded-2xl bg-primary-light text-primary size-12 shrink-0 transition-all group-hover:scale-110">
@@ -119,7 +126,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, expenses, onDelete, onEdit,
                   </p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <p className="text-slate-300 text-[10px] font-medium">{formatDate(expense.timestamp)}</p>
-                    <p className="text-slate-200 text-[9px] font-mono tracking-tighter">編號: {expense.id.slice(-6).toUpperCase()}</p>
+                    <p className="text-slate-200 text-[9px] font-mono tracking-tighter">ID: {expense.id.slice(-6).toUpperCase()}</p>
                   </div>
                 </div>
               </div>
